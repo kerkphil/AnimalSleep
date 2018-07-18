@@ -26,7 +26,7 @@ Copyright: K. Phillips.  Feel free to copy, modify and use at your own risk.  Ho
 
 Contents
 ========
-Ths repository contains for sets of Python code.
+Ths repository contains four sets of Python code.
 
 - GSleepElephantSimpleC.py
 - GSleepElephantSimpleW.py
