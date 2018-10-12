@@ -26,12 +26,15 @@ Copyright: K. Phillips.  Feel free to copy, modify and use at your own risk.  Ho
 
 Contents
 ========
-Ths repository contains four sets of Python code.
+Ths repository contains four sets of Python code for 5 parameter cases (a-e).
 
-- GSleepElephantSimpleC.py
-- GSleepElephantSimpleW.py
-- GSleepSlothSimpleC.py
-- GSleepSlothSimpleW.py
+- GSleepElephantSimpleCx.py
+- GSleepElephantSimpleWx.py
+- GSleepSlothSimpleCx.py
+- GSleepSlothSimpleWx.py
+
+where x takes on values of a, b, c, d & e
+a is the benchmark case, and b-e are used for sensitivity analysis
 
 These are the calibrations of the generalized utility model of sleep for elephants and three-toed sloths in captivity and in the wild.  Internal documentation explains how the calibration and simulation are performed.
 

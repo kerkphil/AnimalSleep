@@ -19,19 +19,22 @@ that repeats over a 24-hour period.
 This version treats A as a jump variable with only two values, sleep or awake.
 It uses a power function for consumption and a power function for leisure.
 
+The code chooses values for muS and sig to match the data for mean and standard
+deviation of hour slept for capitve zoo elephants
+
 Code written by Kerk l. Phillips
-Mar. 11, 2017
-Adapted to the general model
-Nov. 18, 2017
+Oct. 11, 2018
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle as pkl
+from numba import njit
 
-name = 'GSleepElephantSimpleW'
+name = 'GSleepElephantSimpleCa'
 
-def moddefs(H, y, Am, A, z, *mparams):
+@njit
+def moddefs(H, y, Am, A, z, mparams):
     '''
     H is the homeostatic process now
     y is the value of the circadian cycle now
@@ -43,6 +46,10 @@ def moddefs(H, y, Am, A, z, *mparams):
 
     U is total utility
     '''
+    
+    # unpack mparams
+    (q, nu_S, nu_W, kappa, muW, muS, lambd, chiS, eta, xi, mu, \
+           gamma, yvect, rho, sig) = mparams
     # effective labor as a function of sleep stock
     b = np.exp(z)* (mu + xi*(muW-H)**eta)
     # if working (A=0)
@@ -67,8 +74,8 @@ def moddefs(H, y, Am, A, z, *mparams):
     
     return U, C, Hp
 
-
-def runsim(T, mparams):
+@njit
+def runsim(T, epshist, mparams):
     Hhist = np.zeros(T+1)
     yhist = np.zeros(T+1)
     Ahist = np.zeros(T+1)
@@ -76,7 +83,6 @@ def runsim(T, mparams):
     Chist = np.zeros(T)
     bhist = np.zeros(T)
     Uhist = np.zeros(T)
-    epshist = sig*np.random.normal(0., 1., T+1)
     
     Hhist[0] = 0.
     Ahist[0] = 0
@@ -100,18 +106,48 @@ def runsim(T, mparams):
             Ahist[t+1] = 1
             Hhist[t+1] = Hpsleep
             Chist[t] = Csleep
-            Uhist[t] = Usleep
         else:
             Ahist[t+1] = 0
             Hhist[t+1] = Hpwake
             Chist[t] = Cwake
-            Uhist[t] = Uwake
     
     return Hhist, yhist, Ahist, Chist, bhist, Uhist, zhist
 
+@njit
+def SMM(inparams, T, epshist, extraparams):
+    # upack inparams
+    muS = inparams[0] 
+    if inparams[1] > 0.:
+        sig = inparams[1]
+    else:
+        sig = 0.  
+    
+    (q, nu_S, nu_W, kappa, muW, lambd, chiS, eta, xi, mu, \
+           gamma, yvect, rho) = extraparams
+     
+    mparams2 = (q, nu_S, nu_W, kappa, muW, muS, lambd, chiS, eta, xi, mu, \
+           gamma, yvect, rho, sig)
+     
+    Hhist, yhist, Ahist, Chist, bhist, Uhist, zhist = runsim(T, epshist, mparams2)
 
+    HrsSlept = np.zeros(ndays)
+    for d in range(0,ndays):
+        HrsSlept[d] = np.sum(Ahist[d:d+q-1])/pph
+
+    HrsMean = np.mean(HrsSlept)
+    HrsStd  = np.std(HrsSlept)
+    
+    outarray = np.array([HrsMean, HrsStd])
+    
+    sse = np.sum(np.abs(outarray - np.array([6.28, 0.21])))
+    
+    print(muS, sig, outarray, sse)
+    
+    return sse
+
+     
 def plothist(H, C, A, y, b, U, t):
-
+    
     plt.figure()
     plt.subplot(2,2,1)
     plt.plot(t, H, label='H')
@@ -144,16 +180,15 @@ nu_W = 8.*q/24.    # decay rate while awake
 nu_S = 8.*q/24.    # decay rate while sleeping
 kappa = 2.         # curvature of circadian penalty
 muW = 1.0          # waking asymptote for homeostatic process
-muS = -1.5         # sleeping asymptote for homeostatic process
+muS =   -0.90558   # sleeping asymptote for homeostatic process
 lambd = .2         # wake/sleep switching cost
 chiS =  10.        # utility weight on circadian cycle
 eta = 1.           # curvature of b(H) functuion
-mu = 0.           # additive term for b(H) function
-xi = 6.4           # scaling factor for b(H) function
+mu = 0.            # additive term for b(H) function
+xi = 1.0           # scaling factor for b(H) function
 gamma = .8         # curvature of consumption utility
-sig = 0.           # standard deviation of z innovations
+sig = 0.00620712*.21/0.22631773142101688   # standard deviation of z innovations
 rho = .9**(24/q)   # autocorrelation of z innovations
-
 
 # set up sine way for circadian cycle
 yvect = np.linspace(0., 2*np.pi, num = q+1)
@@ -161,36 +196,80 @@ yvect = -np.cos(yvect)
 #plt.plot(yvect)
 #plt.show()
 
-# save to mparams list
-mparams = (q, nu_S, nu_W, kappa, muW, muS, lambd, chiS, eta, xi, mu, \
-           gamma, yvect, rho, sig)
+# Simulate with shocks
+ndays = 10000
+T = ndays*q    # number of periods to simulate
+epshist = sig*pkl.load(open('epshist.pkl', 'rb'))
+
+inparams =np.array([muS, sig])
+extraparams = (q, nu_S, nu_W, kappa, muW, lambd, chiS, eta, xi, mu, \
+           gamma, yvect, rho)
+
+f = lambda inparams: SMM(inparams, T, epshist, extraparams)
+
+from scipy.optimize import fmin
+
+soln, junk = fmin(f, inparams, xtol=0.01, ftol=0.01, retall=1)
+
+muS = soln[0]
+sig = soln[1]
+
+mparams1 = (q, nu_S, nu_W, kappa, muW, muS, lambd, chiS, eta, xi, mu, \
+       gamma, yvect, rho, sig)
+ 
+Hhist, yhist, Ahist, Chist, bhist, Uhist, zhist = runsim(T, epshist, mparams1)
+
+HrsSlept = np.zeros(ndays)
+for d in range(0,ndays):
+    HrsSlept[d] = np.sum(Ahist[d:d+q-1])/pph
+
+HrsMean = np.mean(HrsSlept)
+HrsStd  = np.std(HrsSlept)
+HrsAuto = np.corrcoef(HrsSlept[0:ndays-1],HrsSlept[1:ndays])
+HrsAuto = HrsAuto[0,1]
+
+print('muS:   ', muS)
+print('sigma: ', sig)
+print('average hours of sleep per day:   ', HrsMean)
+print('st dev of hours of sleep per day: ', HrsStd)
+print('autocorreation of sleep per day: ', HrsAuto)
+print(' ')
+data = (HrsMean, HrsStd)
+pkl.dump(data, open( name + '.pkl', 'wb' ) )
 
 
 # Simulate with no shocks to find SS
+sig = 0.
 ndays = 5
 T = ndays*q    # number of periods to simulate
+epshist = sig*np.random.normal(0., 1., T+1)
 
-Hhist, yhist, Ahist, Chist, bhist, Uhist, zhist = runsim(T, mparams)
+Hhist, yhist, Ahist, Chist, bhist, Uhist, zhist = runsim(T, epshist, mparams1)
 
 # plot typical SS cycle over 2 days
-start = T - q - 20*pph
-end = T - 20*pph + 1
+start = T - 2*q 
 # plot data
-H = Hhist[start:end]
-C = Chist[start:end]
-A = Ahist[start:end]
-y = yhist[start:end]
-b = bhist[start:end]
-U = Uhist[start:end]
-y = yhist[start:end]
-t = range(start, end)
+H = Hhist[start:T]
+C = Chist[start:T]
+A = Ahist[start:T]
+y = yhist[start:T]
+b = bhist[start:T]
+U = Uhist[start:T]
+t = range(start, T)
 
 plothist(H, C, A, y, b, U, t)
 
 plt.savefig(name + '_SS.pdf', format='pdf', dpi=2000)
 plt.show()
 
-time = (4, 8, 12, 16, 20, 24, 4)
+# plot typical SS cycle over 1 day
+start = T - q - 24*pph
+end = T - 24*pph + 1
+
+A = Ahist[start:end]
+y = yhist[start:end]
+
+time = (0, 4, 8, 12, 16, 20, 24)
 plt.figure()
 plt.subplot(2,1,1)
 plt.plot(A)
@@ -207,46 +286,3 @@ plt.show()
 unique, counts = np.unique(Ahist[T-q:T], return_counts=True)
 print('fraction waking:   ', float(counts[0])/q, 'hours:', 24*float(counts[0])/q)
 print('fraction sleeping :', float(counts[1])/q, 'hours:', 24*float(counts[1])/q)
-
-
-## Simulate with shocks
-## Simulate with no shocks to find SS
-#ndays = 100000
-#T = ndays*q    # number of periods to simulate
-#sig = .13
-#
-#Hhist, yhist, Ahist, Chist, bhist, Uhist, zhist = runsim(T, mparams)
-#
-### plot typical SS cycle over full sample
-##start = 0 
-### plot data
-##H = Hhist[start:T]
-##C = Chist[start:T]
-##A = Ahist[start:T]
-##y = yhist[start:T]
-##b = bhist[start:T]
-##U = Uhist[start:T]
-##t = range(start, T)
-##
-##plothist(H, C, A, y, b, U, t)
-##
-##plt.savefig(name + '.pdf', format='pdf', dpi=2000)
-##plt.show()
-#
-#HrsSlept = np.zeros(ndays)
-#HProcess = np.zeros(ndays)
-#for d in range(0,ndays):
-#    HrsSlept[d] = np.sum(Ahist[d:d+q-1])/pph
-#    HProcess[d] = np.mean(Ahist[d:d+q-1])
-#
-#HrsMean = np.mean(HrsSlept)
-#HrsStd  = np.std(HrsSlept)
-#HrsAuto = np.corrcoef(HrsSlept[0:ndays-1],HrsSlept[1:ndays])
-#HrsAuto = HrsAuto[0,1]
-#
-#print('average hours of sleep per day:   ', HrsMean)
-#print('st dev of hours of sleep per day: ', HrsStd)
-#print('autocorr hours of sleep per day:  ', HrsAuto)
-#print(' ')
-#data = (HrsMean, HrsStd, HrsAuto)
-#pkl.dump(data, open( name + '.pkl', 'wb' ) )
