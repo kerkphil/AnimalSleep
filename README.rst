@@ -39,3 +39,5 @@ a is the benchmark case, and b-e are used for sensitivity analysis
 These are the calibrations of the generalized utility model of sleep for elephants and three-toed sloths in captivity and in the wild.  Internal documentation explains how the calibration and simulation are performed.
 
 A copy of the working paper is also included.
+
+Finally, data from Tobler (1992) and Gravett et al (2017) on sleep patterns of elephants is included in an Excel spreadsheet.
